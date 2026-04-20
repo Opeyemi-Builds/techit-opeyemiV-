@@ -11,8 +11,5 @@ logs/
 .vscode/
 *.suo
 *.ntvs* 
-package-lock.json
-tsconfig.json
-package.json
+
 MASTER_PROMPT.md
-setup.js
