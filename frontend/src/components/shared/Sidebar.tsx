@@ -17,6 +17,7 @@ const navByRole: Record<string, { label: string; icon: React.ComponentType<{ cla
     { label: "Social Feed",    icon: Rss,             href: "/feed"            },
     { label: "People",         icon: Users,           href: "/people"          },
     { label: "Projects",       icon: Globe,           href: "/projects"        },
+    { label: "Workspaces",     icon: Code2,           href: "/workspaces"      }, // <--- ADDED THIS LINE
     { label: "Submit Idea",    icon: Rocket,          href: "/idea-submit"     },
     { label: "Find Team",      icon: UserPlus,        href: "/matches"         },
     { label: "Incubation Hub", icon: Trophy,          href: "/incubation-hub"  },
@@ -24,6 +25,7 @@ const navByRole: Record<string, { label: string; icon: React.ComponentType<{ cla
     { label: "Notifications",  icon: Bell,            href: "/notifications"   },
     { label: "Wallet",         icon: Wallet,          href: "/wallet"          },
   ],
+
   collaborator: [
     { label: "Dashboard",     icon: LayoutDashboard, href: "/collaborator/dashboard"     },
     { label: "Social Feed",   icon: Rss,             href: "/feed"                       },
