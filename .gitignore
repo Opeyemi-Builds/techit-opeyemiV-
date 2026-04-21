@@ -1,0 +1,15 @@
+.env
+.env.example
+node_modules/
+dist/
+build/
+coverage/
+logs/
+*.log
+.DS_Store
+.idea/
+.vscode/
+*.suo
+*.ntvs* 
+
+MASTER_PROMPT.md
