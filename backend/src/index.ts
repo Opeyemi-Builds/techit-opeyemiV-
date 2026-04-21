@@ -20,6 +20,8 @@ import { paymentsRouter } from "./modules/payments/payments.router.js";
 import { workspaceRouter } from "./modules/workspace/workspace.router.js";
 import { uploadRouter } from "./modules/upload/upload.router.js";
 import { analyticsRouter } from "./modules/analytics/analytics.router.js";
+
+import { paystackWebhook } from "./modules/payments/paystack/paystack.webhook.js";
 import { setupSocketHandlers } from "./modules/messaging/socket.handler.js";
 import { errorHandler } from "./shared/middleware/errorHandler.js";
 import { generalLimiter, authLimiter, aiLimiter } from "./shared/middleware/rateLimiter.js";
@@ -27,6 +29,9 @@ import { generalLimiter, authLimiter, aiLimiter } from "./shared/middleware/rate
 const app = express();
 const httpServer = createServer(app);
 
+/* =========================
+   ORIGINS
+========================= */
 const ALLOWED_ORIGINS = [
   process.env.FRONTEND_URL ?? "http://localhost:5173",
   "http://localhost:5173",
@@ -34,38 +39,75 @@ const ALLOWED_ORIGINS = [
   "http://localhost:3000",
 ];
 
+/* =========================
+   SOCKET
+========================= */
 export const io = new SocketIO(httpServer, {
-  cors: { origin: ALLOWED_ORIGINS, methods: ["GET","POST"], credentials: true },
-  transports: ["websocket","polling"],
+  cors: { origin: ALLOWED_ORIGINS, methods: ["GET", "POST"], credentials: true },
+  transports: ["websocket", "polling"],
 });
+
 setupSocketHandlers(io);
 
-// ── Middleware ─────────────────────────────────────────────
+/* =========================
+   SECURITY MIDDLEWARE
+========================= */
 app.use(helmet({ crossOriginEmbedderPolicy: false, contentSecurityPolicy: false }));
 app.use(compression() as express.RequestHandler);
+
 app.use(cors({
   origin: (origin, cb) => {
     if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
     cb(new Error(`CORS blocked: ${origin}`));
   },
   credentials: true,
-  methods: ["GET","POST","PUT","PATCH","DELETE","OPTIONS"],
-  allowedHeaders: ["Content-Type","Authorization","X-Requested-With"],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
 }));
+
 app.options("*", cors());
 
-// Stripe webhook needs raw body
-app.use("/api/payments/webhook", express.raw({ type: "application/json" }));
+/* =========================
+   WEBHOOKS (CRITICAL)
+========================= */
+
+/**
+ * Stripe webhook (already existing)
+ */
+app.use(
+  "/api/payments/webhook",
+  express.raw({ type: "application/json" })
+);
+
+/**
+ * Paystack webhook (NEW)
+ */
+app.use(
+  "/api/payments/paystack/webhook",
+  express.raw({ type: "application/json" })
+);
+app.use("/api/payments",paymentsRouter)
+
+/* =========================
+   BODY PARSING
+========================= */
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
-if (process.env.NODE_ENV !== "production") app.use(morgan("dev"));
 
-// ── Rate limiting ──────────────────────────────────────────
+if (process.env.NODE_ENV !== "production") {
+  app.use(morgan("dev"));
+}
+
+/* =========================
+   RATE LIMITING
+========================= */
 app.use("/api/", generalLimiter);
 app.use("/api/auth/", authLimiter);
 app.use("/api/matching/", aiLimiter);
 
-// ── Health ─────────────────────────────────────────────────
+/* =========================
+   HEALTH CHECK
+========================= */
 app.get("/health", (_req, res) => {
   res.json({
     status: "ok",
@@ -75,41 +117,62 @@ app.get("/health", (_req, res) => {
     supabase: !!process.env.SUPABASE_URL,
     anthropic: !!process.env.ANTHROPIC_API_KEY,
     stripe: !!process.env.STRIPE_SECRET_KEY,
+    paystack: !!process.env.PAYSTACK_SECRET_KEY,
   });
 });
 
-// ── Routes ─────────────────────────────────────────────────
-app.use("/api/auth",          authRouter);
-app.use("/api/users",         usersRouter);
-app.use("/api/feed",          feedRouter);
-app.use("/api/projects",      projectsRouter);
-app.use("/api/matching",      matchingRouter);
-app.use("/api/collab",        collabRouter);
-app.use("/api/credits",       creditsRouter);
-app.use("/api/messages",      messagingRouter);
+/* =========================
+   ROUTES
+========================= */
+app.use("/api/auth", authRouter);
+app.use("/api/users", usersRouter);
+app.use("/api/feed", feedRouter);
+app.use("/api/projects", projectsRouter);
+app.use("/api/matching", matchingRouter);
+app.use("/api/collab", collabRouter);
+app.use("/api/credits", creditsRouter);
+app.use("/api/messages", messagingRouter);
 app.use("/api/notifications", notificationsRouter);
-app.use("/api/payments",      paymentsRouter);
-app.use("/api/workspace",     workspaceRouter);
-app.use("/api/upload",        uploadRouter);
-app.use("/api/analytics",     analyticsRouter);
 
-// ── 404 ────────────────────────────────────────────────────
+/**
+ * Payments
+ * (Stripe + Paystack coexist safely)
+ */
+app.use("/api/payments", paymentsRouter);
+
+app.use("/api/workspace", workspaceRouter);
+app.use("/api/upload", uploadRouter);
+app.use("/api/analytics", analyticsRouter);
+
+/* =========================
+   PAYSTACK WEBHOOK HANDLER
+========================= */
+app.post("/api/payments/paystack/webhook", paystackWebhook);
+
+/* =========================
+   404
+========================= */
 app.use((req, res) => {
   res.status(404).json({ error: `Not found: ${req.method} ${req.path}` });
 });
 
-// ── Error handler ──────────────────────────────────────────
+/* =========================
+   ERROR HANDLER
+========================= */
 app.use(errorHandler);
 
-// ── Start ──────────────────────────────────────────────────
+/* =========================
+   START SERVER
+========================= */
 const PORT = parseInt(process.env.PORT ?? "3001", 10);
+
 httpServer.listen(PORT, "0.0.0.0", () => {
   console.log("\n╔══════════════════════════════════════════╗");
   console.log(`║  TechIT Network API v2.0                 ║`);
   console.log(`║  http://localhost:${PORT}                   ║`);
-  console.log(`║  Supabase : ${(process.env.SUPABASE_URL      ? "Connected   " : "NOT SET     ")}                ║`);
-  console.log(`║  Anthropic: ${(process.env.ANTHROPIC_API_KEY ? "Connected   " : "NOT SET     ")}                ║`);
-  console.log(`║  Stripe   : ${(process.env.STRIPE_SECRET_KEY ? "Connected   " : "NOT SET     ")}                ║`);
+  console.log(`║                                          ║`);
+  console.log(`║  Stripe   : ${(process.env.STRIPE_SECRET_KEY ? "READY   " : "MISSING ")}`);
+  console.log(`║  Paystack : ${(process.env.PAYSTACK_SECRET_KEY ? "READY   " : "MISSING ")}`);
   console.log("╚══════════════════════════════════════════╝\n");
 });
 

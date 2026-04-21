@@ -53,6 +53,9 @@ import Workspace from "./dashboard/shared/Workspace";
 import People from "./dashboard/shared/People";
 import Projects from "./dashboard/shared/Projects";
 
+//Private to User
+import PaymentMethod from "./pages/paymentMethod";
+
 const ROLE_ROUTES: Record<string, string> = {
   founder: "/dashboard",
   collaborator: "/collaborator/dashboard",
@@ -143,6 +146,9 @@ export default function App() {
         <Route path="/workspace/:projectId" element={<ProtectedRoute><Workspace /></ProtectedRoute>} />
         <Route path="/people"              element={<ProtectedRoute><People /></ProtectedRoute>} />
         <Route path="/projects"            element={<ProtectedRoute><Projects /></ProtectedRoute>} />
+
+        {/* Payment */}
+        <Route path="/payment-method" element={<PaymentMethod />} />
 
         <Route path="*" element={<NotFound />} />
       </Routes>
