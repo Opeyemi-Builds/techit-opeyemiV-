@@ -2,10 +2,9 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   TrendingUp, TrendingDown, Plus, Star,
-  ArrowUpRight, ArrowDownLeft, CreditCard,
-  Gift, RefreshCw, Brain, Zap, Rocket,
+  CreditCard, Gift, RefreshCw, Brain, Zap, Rocket,
   Briefcase, BarChart, FileText, CheckCircle,
-  Target, Award, Flame, Heart,
+  Target, Award, Flame, Heart, Globe
 } from "lucide-react";
 
 import DashboardLayout from "../../components/shared/DashboardLayout";
@@ -14,12 +13,9 @@ import { Button } from "../../components/ui/button";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../contexts/AuthContext";
 import { useCredits } from "../../contexts/CreditContext";
-import { cn, timeAgo } from "../../lib/utils";
+import { cn } from "../../lib/utils";
 
-/* =========================
-   PRICING (USD)
-========================= */
-
+// Static Data
 const COSTS = [
   { action: "AI Collaborator Matching", cost: 50, Icon: Brain },
   { action: "Idea AI Evaluation", cost: 75, Icon: Zap },
@@ -38,11 +34,12 @@ const EARN = [
   { action: "7-day login streak", earn: 25, Icon: Flame },
 ];
 
+// Display prices (The Edge Function handles the actual safe charging)
 const PKGS = [
-  { id: "starter", credits: 500, price: 0.001, label: "Starter" },
-  { id: "builder", credits: 1500, price: 0.001, label: "Builder", popular: true },
-  { id: "pro", credits: 5000, price: 0.001, label: "Pro" },
-  { id: "elite", credits: 15000, price: 0.001, label: "Elite" },
+  { id: "starter", credits: 500, priceNGN: 1000, priceUSD: 1.00, label: "Starter" },
+  { id: "builder", credits: 1500, priceNGN: 2500, priceUSD: 2.50, label: "Builder", popular: true },
+  { id: "pro", credits: 5000, priceNGN: 5000, priceUSD: 5.00, label: "Pro" },
+  { id: "elite", credits: 15000, priceNGN: 10000, priceUSD: 10.00, label: "Elite" },
 ];
 
 export default function Wallet() {
@@ -53,59 +50,56 @@ export default function Wallet() {
   const [txs, setTxs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"overview" | "buy" | "earn">("overview");
-  const [selectedPkg, setSelectedPkg] = useState(1);
+  const [selectedPkg, setSelectedPkg] = useState(1); // Default to "Builder"
+  const [currency, setCurrency] = useState<"NGN" | "USD">("NGN");
 
   useEffect(() => {
-    load();
-  }, []);
+    if (profile?.user_id) {
+      load();
+    }
+  }, [profile]);
 
-  /* =========================
-     LOAD TRANSACTIONS
-  ========================= */
   async function load() {
-    const { data } = await supabase
-      .from("credit_transactions")
-      .select("*")
-      .eq("user_id", profile!.user_id)
-      .order("created_at", { ascending: false })
-      .limit(30);
+    try {
+      const { data, error } = await supabase
+        .from("credit_transactions")
+        .select("*")
+        .eq("user_id", profile!.user_id)
+        .order("created_at", { ascending: false })
+        .limit(30);
 
-    setTxs(data ?? []);
-    setLoading(false);
+      if (error) throw error;
+      setTxs(data ?? []);
+    } catch (error) {
+      console.error("Error loading transactions:", error);
+    } finally {
+      setLoading(false);
+    }
   }
 
-  /* =========================
-     PAYMENT FLOW (FIXED)
-  ========================= */
   function purchase() {
     const pkg = PKGS[selectedPkg];
-
-    // 👉 Send user to payment method selection page
-    navigate(`/payment-method?package=${pkg.id}`);
+    // Navigate with both the package ID and the selected currency
+    navigate(`/payment-method?package=${pkg.id}&currency=${currency}`);
   }
 
-  const earned = txs
-    .filter(t => t.amount > 0)
-    .reduce((s, t) => s + t.amount, 0);
-
-  const spent = Math.abs(
-    txs.filter(t => t.amount < 0).reduce((s, t) => s + t.amount, 0)
-  );
+  const earned = txs.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
+  const spent = Math.abs(txs.filter(t => t.amount < 0).reduce((s, t) => s + t.amount, 0));
 
   return (
     <DashboardLayout title="Wallet & Credits">
       <div className="max-w-4xl mx-auto space-y-6 page-enter">
 
-        {/* BALANCE */}
+        {/* BALANCE HERO */}
         <div className="rounded-2xl bg-gradient-to-br from-primary/20 via-secondary/8 to-transparent border border-primary/20 p-8 relative overflow-hidden">
           <div className="orb orb-violet w-64 h-64 -top-20 -right-20 opacity-40 absolute" />
 
           <div className="relative z-10">
-            <p className="font-mono text-xs text-muted-foreground uppercase tracking-widest mb-2">
+            <p className="font-mono text-xs text-muted-foreground uppercase mb-2">
               Your Credit Balance
             </p>
 
-            <div className="font-display font-extrabold text-6xl gradient-text mb-1">
+            <div className="font-display text-6xl gradient-text">
               {balance.toLocaleString()}
             </div>
 
@@ -114,126 +108,146 @@ export default function Wallet() {
             </p>
 
             <div className="flex gap-3 flex-wrap">
-              <Button variant="gradient" size="lg" onClick={() => setTab("buy")}>
-                <Plus className="size-4" /> Buy Credits
+              <Button onClick={() => setTab("buy")}>
+                <Plus className="size-4 mr-2" /> Buy
               </Button>
 
-              <Button variant="outline" size="lg" onClick={() => setTab("earn")}>
-                <Gift className="size-4" /> Earn Free Credits
+              <Button variant="outline" onClick={() => setTab("earn")}>
+                <Gift className="size-4 mr-2" /> Earn
               </Button>
 
-              <Button variant="ghost" size="lg" onClick={() => { refresh(); load(); }}>
-                <RefreshCw className="size-4" />
+              <Button variant="ghost" onClick={() => { refresh(); load(); }}>
+                <RefreshCw className={cn("size-4", loading && "animate-spin")} />
               </Button>
             </div>
           </div>
         </div>
 
         {/* STATS */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <StatCard label="Total Earned" value={earned.toLocaleString()} icon={<TrendingUp className="size-5" />} color="teal" />
-          <StatCard label="Total Spent" value={spent.toLocaleString()} icon={<TrendingDown className="size-5" />} color="rose" />
-          <StatCard label="Credibility" value={String(Math.round(profile?.credibility_score ?? 0))} icon={<Star className="size-5" />} color="amber" />
+        <div className="grid grid-cols-3 gap-4">
+          <StatCard label="Earned" value={earned.toLocaleString()} icon={<TrendingUp />} />
+          <StatCard label="Spent" value={spent.toLocaleString()} icon={<TrendingDown />} />
+          <StatCard label="Credibility" value={String(profile?.credibility_score ?? 0)} icon={<Star />} />
         </div>
 
-        {/* TABS */}
-        <div className="flex gap-1 p-1 bg-muted rounded-xl">
+        {/* TABS CONTROLS */}
+        <div className="flex bg-muted p-1 rounded-xl">
           {(["overview", "buy", "earn"] as const).map(t => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={cn(
-                "flex-1 py-2 px-4 rounded-lg text-sm font-medium capitalize",
-                tab === t
-                  ? "bg-card text-foreground shadow-sm"
-                  : "text-muted-foreground"
-              )}
+              className={cn("flex-1 py-2 rounded-lg capitalize transition-colors font-medium", tab === t && "bg-card shadow-sm")}
             >
               {t}
             </button>
           ))}
         </div>
 
-        {/* BUY SECTION */}
+        {/* OVERVIEW TAB */}
+        {tab === "overview" && (
+          <Card className="p-5">
+            <h3 className="font-bold mb-4 flex items-center gap-2">
+              <RefreshCw className="size-4" /> Recent Transactions
+            </h3>
+
+            {loading ? (
+              <div className="text-center py-4 text-muted-foreground">Loading...</div>
+            ) : txs.length === 0 ? (
+              <div className="text-center py-4 text-muted-foreground">No transactions yet.</div>
+            ) : (
+              <div className="space-y-3">
+                {txs.map(tx => (
+                  <div key={tx.id} className="flex justify-between items-center py-2 border-b last:border-0">
+                    <span className="text-sm">{tx.description}</span>
+                    <span className={cn("font-bold", tx.amount > 0 ? "text-green-500" : "text-red-500")}>
+                      {tx.amount > 0 ? "+" : ""}{tx.amount}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        )}
+
+        {/* BUY TAB */}
         {tab === "buy" && (
           <div className="space-y-5">
+            
+            {/* Currency Toggle */}
+            <div className="flex items-center justify-between bg-card p-4 rounded-xl border border-border/50 shadow-sm">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <Globe className="size-4 text-primary" />
+                Select Currency
+              </div>
+              <div className="flex bg-muted p-1 rounded-lg">
+                <button 
+                  onClick={() => setCurrency("NGN")} 
+                  className={cn("px-4 py-1.5 rounded-md text-sm font-bold transition-all", currency === "NGN" && "bg-background shadow text-primary")}
+                >
+                  ₦ NGN
+                </button>
+                <button 
+                  onClick={() => setCurrency("USD")} 
+                  className={cn("px-4 py-1.5 rounded-md text-sm font-bold transition-all", currency === "USD" && "bg-background shadow text-primary")}
+                >
+                  $ USD
+                </button>
+              </div>
+            </div>
 
-            {/* PACKAGES */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Packages Grid */}
+            <div className="grid grid-cols-2 gap-4">
               {PKGS.map((pkg, i) => (
                 <button
                   key={pkg.id}
                   onClick={() => setSelectedPkg(i)}
                   className={cn(
-                    "rounded-2xl border p-5 text-left transition-all",
-                    selectedPkg === i
-                      ? "border-primary bg-primary/10"
-                      : "border-border bg-card"
+                    "border p-5 rounded-xl text-left transition-all relative overflow-hidden",
+                    selectedPkg === i 
+                      ? "border-primary bg-primary/5 ring-1 ring-primary shadow-md" 
+                      : "hover:border-primary/50 bg-card"
                   )}
                 >
                   {pkg.popular && (
-                    <div className="text-[10px] px-2 py-1 bg-primary text-white rounded-full w-fit mb-2">
+                    <div className="absolute top-0 right-0 bg-primary text-primary-foreground text-[10px] font-bold px-2 py-1 rounded-bl-lg uppercase tracking-wider">
                       Popular
                     </div>
                   )}
-
-                  <div className="font-display text-2xl gradient-text">
-                    {pkg.credits.toLocaleString()}
+                  <div className="font-bold text-lg mb-1">{pkg.label}</div>
+                  <div className="text-muted-foreground text-sm mb-3 font-medium">
+                    {pkg.credits.toLocaleString()} credits
                   </div>
-
-                  <div className="text-xs text-muted-foreground">
-                    credits
-                  </div>
-
-                  <div className="font-semibold">
-                    ${pkg.price}
+                  <div className="font-display text-2xl text-foreground">
+                    {currency === "NGN" ? `₦${pkg.priceNGN.toLocaleString()}` : `$${pkg.priceUSD.toFixed(2)}`}
                   </div>
                 </button>
               ))}
             </div>
 
-            {/* PAYMENT CARD */}
-            <Card className="p-6">
-              <div className="flex justify-between mb-5">
-                <div>
-                  <h3 className="font-bold">Complete Purchase</h3>
-                  <p className="text-sm text-muted-foreground">
-                    {PKGS[selectedPkg].credits.toLocaleString()} credits
-                  </p>
-                </div>
-
-                <div className="font-display text-3xl gradient-text">
-                  ${PKGS[selectedPkg].price}
-                </div>
-              </div>
-
-              <Button
-                variant="gradient"
-                size="lg"
-                className="w-full"
-                onClick={purchase}
-              >
-                <CreditCard className="size-4" />
-                Pay Now
+            <Card className="p-5">
+              <Button className="w-full font-bold text-lg h-12 shadow-md hover:shadow-lg transition-all" onClick={purchase}>
+                <CreditCard className="size-5 mr-2" />
+                Proceed to Payment
               </Button>
-
-              <p className="text-xs text-muted-foreground text-center mt-3">
-                You’ll choose Paystack or Flutterwave next
-              </p>
             </Card>
           </div>
         )}
 
-        {/* OTHER TABS (kept minimal) */}
-        {tab === "overview" && (
-          <Card className="p-5">
-            <p className="text-sm text-muted-foreground">Overview coming soon...</p>
-          </Card>
-        )}
-
+        {/* EARN TAB */}
         {tab === "earn" && (
-          <Card className="p-5">
-            <p className="text-sm text-muted-foreground">Earn system coming soon...</p>
+          <Card className="p-5 space-y-4">
+            <h3 className="font-bold flex items-center gap-2 mb-4">
+              <Star className="size-4 text-yellow-500" /> Ways to Earn Free Credits
+            </h3>
+            {EARN.map(e => (
+              <div key={e.action} className="flex justify-between items-center p-3 rounded-lg bg-muted/50">
+                <div className="flex items-center gap-3">
+                  <e.Icon className="size-5 text-primary" />
+                  <span className="font-medium text-sm">{e.action}</span>
+                </div>
+                <span className="font-bold text-green-500">+{e.earn}</span>
+              </div>
+            ))}
           </Card>
         )}
 

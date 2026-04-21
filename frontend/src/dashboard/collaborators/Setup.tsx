@@ -5,7 +5,76 @@ import { Button } from "../../components/ui/button";
 import { useAuth } from "../../contexts/AuthContext";
 import { cn } from "../../lib/utils";
 
-const ALL_SKILLS = ["React","Vue","Angular","Node.js","Python","Django","FastAPI","Go","TypeScript","JavaScript","Java","Kotlin","Swift","Flutter","React Native","AWS","GCP","Azure","Docker","Kubernetes","PostgreSQL","MongoDB","Redis","GraphQL","UI/UX Design","Figma","Marketing","Growth","Product Management","Data Science","Machine Learning","DevOps","Blockchain","SEO","Content Strategy"];
+const ALL_SKILLS = [
+  // FRONTEND
+ 
+  "React","Next.js","Vue","Nuxt","Angular","Svelte",
+  "HTML","CSS","Tailwind CSS","Bootstrap","Sass","Three.js",
+
+  
+
+  "Node.js","Express","NestJS","Django","Flask","FastAPI",
+  "Spring Boot","Laravel",".NET","Ruby on Rails",
+
+  // PROGRAMMING LANGUAGES
+ 
+  "JavaScript","TypeScript","Python","Java","C","C++","C#",
+  "Go","Rust","Kotlin","Swift","Dart","PHP","Ruby","MATLAB",
+
+  // MOBILE
+ 
+  "Flutter","React Native","Android Development","iOS Development",
+  "SwiftUI","Kotlin Multiplatform",
+
+  // CLOUD
+  
+  "AWS","GCP","Azure","Firebase","Supabase","Vercel","Netlify",
+  "DigitalOcean","Heroku",
+
+  // DEVOPS
+ 
+  "Docker","Kubernetes","CI/CD","GitHub Actions","GitLab CI",
+  "Terraform","Nginx","Linux","Bash","Shell Scripting",
+
+  // DATABASES
+
+  "PostgreSQL","MySQL","MongoDB","Redis","SQLite","Cassandra",
+  "DynamoDB","Firebase Firestore",
+
+  // AI / DATA
+
+  "Machine Learning","Deep Learning","Data Science","Data Analysis",
+  "Computer Vision","NLP","TensorFlow","PyTorch","Scikit-learn",
+  "Pandas","NumPy","OpenCV","LLMs","Prompt Engineering",
+
+  // DESIGN
+  
+  "UI/UX Design","Figma","Adobe XD","Photoshop","Illustrator",
+  "Design Systems","Wireframing","Prototyping",
+
+  // BUSINESS
+  
+  "Product Management","Growth","Marketing","SEO",
+  "Content Strategy","Sales","Analytics","Startup Strategy",
+
+  // BLOCKCHAIN
+  
+  "Blockchain","Solidity","Web3","Smart Contracts","Ethereum","DeFi",
+
+  // SECURITY
+ 
+  "Cybersecurity","Penetration Testing","Ethical Hacking",
+  "Network Security","Cryptography",
+
+  // ENGINEERING
+  
+  "Embedded Systems","IoT","Control Systems","Robotics",
+  "Signal Processing","Computer Networks",
+
+  // TOOLS
+ 
+  "Git","GitHub","GitLab","Bitbucket","Jira","Notion","Slack","Trello"
+];
 const RISK = ["Low","Medium","High"] as const;
 
 export default function CollaboratorSetup() {
