@@ -1,12 +1,26 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Exo+2:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Oxanium:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap");
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-display: "Syne", sans-serif;
-  --font-body: "DM Sans", sans-serif;
-  --font-mono: "JetBrains Mono", monospace;
+  /* ── Active font stack: Space Grotesk + Space Mono (Option 1) ── */
+  --font-display: "Space Grotesk", sans-serif;
+  --font-body:    "Space Grotesk", sans-serif;
+  --font-mono:    "Space Mono", monospace;
+
+  /* ── Alternate A: Exo 2 + Space Mono (Option 5) ──
+     To activate, swap the three lines above with:
+     --font-display: "Exo 2", sans-serif;
+     --font-body:    "Exo 2", sans-serif;
+     --font-mono:    "Space Mono", monospace;        */
+
+  /* ── Alternate B: Oxanium + Share Tech Mono (Option 6) ──
+     To activate, swap the three lines above with:
+     --font-display: "Oxanium", sans-serif;
+     --font-body:    "Oxanium", sans-serif;
+     --font-mono:    "Share Tech Mono", monospace;   */
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -209,6 +223,11 @@
 .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
 
 /* Font family utilities */
-.font-display { font-family: 'Syne', sans-serif; }
-.font-body    { font-family: 'DM Sans', sans-serif; }
-.font-mono    { font-family: 'JetBrains Mono', monospace; }
+.font-display    { font-family: 'Space Grotesk', sans-serif; }
+.font-body       { font-family: 'Space Grotesk', sans-serif; }
+.font-mono       { font-family: 'Space Mono', monospace; }
+
+/* Alternate font utilities — apply className to swap sections */
+.font-exo        { font-family: 'Exo 2', sans-serif; }
+.font-oxanium    { font-family: 'Oxanium', sans-serif; }
+.font-sharetech  { font-family: 'Share Tech Mono', monospace; }
