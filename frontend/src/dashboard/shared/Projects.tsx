@@ -2,280 +2,244 @@ import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion } from "motion/react";
 import {
-  Search, Rocket, UserPlus, Check, ExternalLink,
-  Filter, X, RefreshCw, Zap, Star,
+  Rocket, Code2, Users, Plus, 
+  ExternalLink, Sparkles, FolderKanban
 } from "lucide-react";
 import DashboardLayout from "../../components/shared/DashboardLayout";
-import { Card, Avatar, Badge } from "../../components/ui/card";
+import { Card, Badge } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../contexts/AuthContext";
-import { cn, timeAgo } from "../../lib/utils";
+import { cn } from "../../lib/utils";
 
 interface Project {
   id: string;
   founder_id: string;
   title: string;
   pitch: string;
-  problem: string;
   industry: string;
   stage: string;
-  tech_stack: string[];
   ai_score: number | null;
-  status: string;
-  created_at: string;
-  founder?: {
-    user_id: string;
-    first_name: string;
-    last_name: string;
-    avatar_url: string | null;
-    credibility_score: number;
-    country: string;
-  };
+  workspaces?: { id: string }[];
+  collaborations?: { count: number }[];
 }
-
-const STAGES = ["All", "Idea", "MVP", "Launch", "Growth"];
-const INDUSTRIES = ["All", "AI/ML", "FinTech", "HealthTech", "E-Commerce", "SaaS", "Edtech", "CleanTech", "Web3", "Other"];
 
 export default function Projects() {
   const { profile } = useAuth();
   const navigate = useNavigate();
 
-  const [projects, setProjects]  = useState<Project[]>([]);
-  const [loading, setLoading]    = useState(true);
-  const [query, setQuery]        = useState("");
-  const [stage, setStage]        = useState("All");
-  const [industry, setIndustry]  = useState("All");
-  const [showFilters, setShowF]  = useState(false);
-  const [joinStatus, setJS]      = useState<Record<string, "none" | "pending" | "accepted" | "member">>({});
-  const [joining, setJoining]    = useState<string | null>(null);
-  const [showModal, setModal]    = useState<Project | null>(null);
-  const [joinMsg, setJoinMsg]    = useState("");
+  const [foundedProjects, setFoundedProjects] = useState<Project[]>([]);
+  const [collabProjects, setCollabProjects] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<"founded" | "contributing">("founded");
 
-  useEffect(() => { load(); }, []);
   useEffect(() => {
-    const t = setTimeout(() => load(), 350);
-    return () => clearTimeout(t);
-  }, [query, stage, industry]);
+    if (profile === undefined) return; // Fix for the infinite loading back-button bug!
+    if (profile?.user_id) {
+      loadMyProjects();
+    } else {
+      setLoading(false);
+    }
+  }, [profile]);
 
-  async function load() {
+  async function loadMyProjects() {
     setLoading(true);
-    let q = supabase
-      .from("projects")
-      .select("*, founder:profiles!founder_id(user_id, first_name, last_name, avatar_url, credibility_score, country)")
-      .eq("status", "active")
-      .neq("founder_id", profile!.user_id)
-      .order("created_at", { ascending: false })
-      .limit(30);
+    try {
+      // 1. Fetch projects the user founded
+      const { data: founded } = await supabase
+        .from("projects")
+        .select(`
+          id, founder_id, title, pitch, industry, stage, ai_score,
+          workspaces ( id ),
+          collaborations ( count )
+        `)
+        .eq("founder_id", profile!.user_id)
+        .order("created_at", { ascending: false });
 
-    if (query.trim()) q = q.or(`title.ilike.%${query}%,pitch.ilike.%${query}%,industry.ilike.%${query}%`);
-    if (stage !== "All") q = q.eq("stage", stage);
-    if (industry !== "All") q = q.eq("industry", industry);
+      // 2. Fetch projects the user is collaborating on
+      const { data: collabs } = await supabase
+        .from("collaborations")
+        .select(`
+          project_id,
+          projects (
+            id, founder_id, title, pitch, industry, stage, ai_score,
+            workspaces ( id ),
+            collaborations ( count )
+          )
+        `)
+        .eq("user_id", profile!.user_id)
+        .eq("status", "active");
 
-    const { data } = await q;
-    const projs = data ?? [];
-    setProjects(projs);
+      setFoundedProjects((founded as any) || []);
+      
+      // Clean up the nested collab data and ensure we don't duplicate founded projects
+      const contributingTo = (collabs || [])
+        .map((c: any) => c.projects)
+        .filter((p: any) => p && p.founder_id !== profile!.user_id);
+        
+      setCollabProjects(contributingTo);
+      
+      // Auto-switch tab if they are only a collaborator
+      if (founded?.length === 0 && contributingTo.length > 0) {
+        setActiveTab("contributing");
+      }
 
-    // Load join statuses
-    if (projs.length > 0) {
-      const projIds = projs.map((p: Project) => p.id);
-
-      const [{ data: requests }, { data: collabs }] = await Promise.all([
-        supabase.from("project_join_requests")
-          .select("project_id, status").eq("user_id", profile!.user_id).in("project_id", projIds),
-        supabase.from("collaborations")
-          .select("project_id").eq("user_id", profile!.user_id).in("project_id", projIds),
-      ]);
-
-      const map: Record<string, "none" | "pending" | "accepted" | "member"> = {};
-      (requests ?? []).forEach((r: { project_id: string; status: string }) => {
-        map[r.project_id] = r.status as "pending" | "accepted";
-      });
-      (collabs ?? []).forEach((c: { project_id: string }) => {
-        map[c.project_id] = "member";
-      });
-      setJS(map);
+    } catch (error) {
+      console.error("Error loading projects:", error);
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   }
 
-  async function sendJoinRequest(project: Project) {
-    setJoining(project.id);
-    const { error } = await supabase.from("project_join_requests").insert({
-      project_id: project.id,
-      user_id: profile!.user_id,
-      message: joinMsg || `I would love to contribute to ${project.title}. My skills align well with this project.`,
-      role: "Collaborator",
-      status: "pending",
-    });
-    if (!error) {
-      setJS(prev => ({ ...prev, [project.id]: "pending" }));
-    }
-    setModal(null);
-    setJoinMsg("");
-    setJoining(null);
-  }
-
-  function JoinButton({ project }: { project: Project }) {
-    const status = joinStatus[project.id] ?? "none";
-    if (status === "member") {
-      return (
-        <Button size="sm" variant="gradient" onClick={() => navigate(`/workspace/${project.id}`)}>
-          Open Workspace
-        </Button>
-      );
-    }
-    if (status === "accepted") {
-      return (
-        <Button size="sm" variant="outline" className="text-emerald-400 border-emerald-500/30" disabled>
-          <Check className="size-4" /> Accepted
-        </Button>
-      );
-    }
-    if (status === "pending") {
-      return (
-        <Button size="sm" variant="outline" disabled>
-          <UserPlus className="size-4" /> Requested
-        </Button>
-      );
-    }
-    return (
-      <Button size="sm" variant="gradient" loading={joining === project.id}
-        onClick={() => setModal(project)}>
-        <UserPlus className="size-4" /> Request to Join
-      </Button>
-    );
-  }
+  const currentList = activeTab === "founded" ? foundedProjects : collabProjects;
 
   return (
-    <DashboardLayout title="Discover Projects">
-      <div className="max-w-5xl mx-auto space-y-5 page-enter">
+    <DashboardLayout title="My Projects">
+      <div className="max-w-5xl mx-auto space-y-6 page-enter">
 
-        {/* Search */}
-        <div className="flex gap-3">
-          <div className="flex-1 flex items-center gap-3 bg-card border border-border rounded-2xl px-4 py-3 focus-within:ring-2 focus-within:ring-primary/50 transition-all">
-            <Search className="size-5 text-muted-foreground flex-shrink-0" />
-            <input value={query} onChange={e => setQuery(e.target.value)}
-              placeholder="Search projects by name, pitch, or industry..."
-              className="flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground" />
-            {query && <button onClick={() => setQuery("")} className="text-muted-foreground hover:text-foreground"><X className="size-4" /></button>}
+        {/* Header Hero */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-card p-6 rounded-2xl border border-border shadow-sm relative overflow-hidden">
+          <div className="orb orb-violet w-64 h-64 -top-20 -right-20 opacity-20 absolute pointer-events-none" />
+          <div className="relative z-10">
+            <h1 className="font-display font-bold text-2xl text-foreground flex items-center gap-2">
+              <FolderKanban className="size-6 text-primary" /> My Portfolio
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Manage your startups, access your development workspaces, and track your collaborations.
+            </p>
           </div>
-          <Button variant="outline" onClick={() => setShowF(s => !s)} className="gap-2">
-            <Filter className="size-4" /><span className="hidden sm:inline">Filters</span>
-          </Button>
-          <Button variant="ghost" size="icon-sm" onClick={load}><RefreshCw className="size-4" /></Button>
+          <Link to="/idea-submit" className="relative z-10">
+            <Button variant="gradient" className="gap-2">
+              <Plus className="size-4" /> Submit Idea
+            </Button>
+          </Link>
         </div>
 
-        {showFilters && (
-          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}
-            className="flex flex-col sm:flex-row gap-4 p-4 bg-card border border-border rounded-2xl">
-            <div className="flex-1 space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Stage</label>
-              <div className="flex flex-wrap gap-2">
-                {STAGES.map(s => (
-                  <button key={s} onClick={() => setStage(s)}
-                    className={cn("px-3 py-1.5 rounded-full text-xs font-medium border transition-all",
-                      stage === s ? "bg-primary text-white border-primary" : "border-border text-muted-foreground hover:border-primary/40")}>
-                    {s}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="flex-1 space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Industry</label>
-              <div className="flex flex-wrap gap-2">
-                {INDUSTRIES.map(ind => (
-                  <button key={ind} onClick={() => setIndustry(ind)}
-                    className={cn("px-3 py-1.5 rounded-full text-xs font-medium border transition-all",
-                      industry === ind ? "bg-primary text-white border-primary" : "border-border text-muted-foreground hover:border-primary/40")}>
-                    {ind}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </motion.div>
-        )}
+        {/* Tab Navigation */}
+        <div className="flex bg-muted/50 p-1 rounded-xl w-full sm:w-fit border border-border/50">
+          <button
+            onClick={() => setActiveTab("founded")}
+            className={cn(
+              "flex-1 sm:flex-none px-6 py-2 rounded-lg text-sm font-semibold transition-all",
+              activeTab === "founded" 
+                ? "bg-card text-foreground shadow-sm border border-border/50" 
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            Founded by Me <span className="ml-2 text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">{foundedProjects.length}</span>
+          </button>
+          <button
+            onClick={() => setActiveTab("contributing")}
+            className={cn(
+              "flex-1 sm:flex-none px-6 py-2 rounded-lg text-sm font-semibold transition-all",
+              activeTab === "contributing" 
+                ? "bg-card text-foreground shadow-sm border border-border/50" 
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            Contributing To <span className="ml-2 text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full">{collabProjects.length}</span>
+          </button>
+        </div>
 
-        <p className="text-sm text-muted-foreground">{loading ? "Loading..." : `${projects.length} projects found`}</p>
-
+        {/* Project Grid */}
         {loading ? (
-          <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {[1, 2, 3, 4].map(i => (
-              <Card key={i} className="p-5 animate-pulse space-y-3">
-                <div className="flex gap-3"><div className="size-10 rounded-xl bg-muted" /><div className="flex-1 space-y-2"><div className="h-4 bg-muted rounded w-48" /><div className="h-3 bg-muted rounded w-32" /></div></div>
-                <div className="h-3 bg-muted rounded" /><div className="h-3 bg-muted rounded w-3/4" />
+              <Card key={i} className="p-6 animate-pulse space-y-4">
+                <div className="flex gap-4">
+                  <div className="size-12 rounded-xl bg-muted" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-5 bg-muted rounded w-3/4" />
+                    <div className="h-4 bg-muted rounded w-1/2" />
+                  </div>
+                </div>
+                <div className="h-4 bg-muted rounded w-full" />
+                <div className="h-4 bg-muted rounded w-5/6" />
               </Card>
             ))}
           </div>
-        ) : projects.length === 0 ? (
-          <Card className="p-12 text-center">
+        ) : currentList.length === 0 ? (
+          <Card className="p-12 text-center border-dashed bg-card/50">
             <Rocket className="size-12 text-muted-foreground/30 mx-auto mb-4" />
-            <p className="font-display font-bold text-lg mb-1 text-foreground">No projects found</p>
-            <p className="text-sm text-muted-foreground mb-4">Be the first to create a project or try different filters.</p>
-            <Link to="/idea-submit"><Button variant="gradient">Create a Project</Button></Link>
+            <h3 className="font-display font-bold text-lg mb-2 text-foreground">
+              {activeTab === "founded" ? "No Startups Yet" : "Not Contributing Yet"}
+            </h3>
+            <p className="text-sm text-muted-foreground mb-6 max-w-md mx-auto">
+              {activeTab === "founded" 
+                ? "You haven't submitted any project ideas yet. Share your vision with the world to start building your team." 
+                : "You aren't collaborating on any external projects right now. Head over to the Incubation Hub to find ideas to build!"}
+            </p>
+            <Link to={activeTab === "founded" ? "/idea-submit" : "/incubation-hub"}>
+              <Button variant="gradient">
+                {activeTab === "founded" ? "Submit an Idea" : "Explore Incubation Hub"}
+              </Button>
+            </Link>
           </Card>
         ) : (
-          <div className="space-y-4">
-            {projects.map((project, i) => {
-              const founder = project.founder;
-              const founderName = founder ? `${founder.first_name} ${founder.last_name}` : "Founder";
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {currentList.map((project, i) => {
+              const hasWorkspace = project.workspaces && project.workspaces.length > 0;
+              const teamSize = project.collaborations?.[0]?.count ?? 0;
+
               return (
-                <motion.div key={project.id} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
-                  <Card className="p-5 hover:border-primary/20 transition-all">
-                    <div className="flex flex-col sm:flex-row gap-4">
-                      <div className="flex items-start gap-3 flex-1 min-w-0">
-                        <div className="size-12 rounded-2xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
+                <motion.div 
+                  key={project.id} 
+                  initial={{ opacity: 0, y: 16 }} 
+                  animate={{ opacity: 1, y: 0 }} 
+                  transition={{ delay: i * 0.05 }}
+                >
+                  <Card className="p-6 flex flex-col h-full hover:border-primary/30 transition-all group">
+                    
+                    <div className="flex justify-between items-start mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="size-12 rounded-xl bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center text-primary font-bold text-xl border border-primary/10">
                           {project.title.charAt(0).toUpperCase()}
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex flex-wrap items-center gap-2 mb-1">
-                            <h3 className="font-display font-bold text-foreground">{project.title}</h3>
-                            <Badge variant="outline">{project.stage}</Badge>
-                            <Badge>{project.industry}</Badge>
-                            {project.ai_score != null && (
-                              <span className="font-mono text-xs text-emerald-400 font-bold">AI: {project.ai_score}</span>
-                            )}
+                        <div>
+                          <h3 className="font-display font-bold text-lg text-foreground line-clamp-1">{project.title}</h3>
+                          <div className="flex gap-2 mt-1 text-xs">
+                            <Badge variant="outline" className="text-muted-foreground">{project.industry}</Badge>
+                            <Badge variant="outline" className="text-muted-foreground">{project.stage}</Badge>
                           </div>
-                          <p className="text-sm text-muted-foreground leading-relaxed mb-2 line-clamp-2">{project.pitch}</p>
-
-                          {/* Founder info */}
-                          {founder && (
-                            <button
-                              onClick={() => navigate(`/u/${founder.user_id}`)}
-                              className="flex items-center gap-2 hover:opacity-80 transition-opacity"
-                            >
-                              <Avatar name={founderName} src={founder.avatar_url ?? undefined} size="xs" />
-                              <span className="text-xs text-muted-foreground">
-                                {founderName} · {founder.country}
-                              </span>
-                            </button>
-                          )}
-
-                          {/* Tech stack */}
-                          {project.tech_stack?.length > 0 && (
-                            <div className="flex flex-wrap gap-1.5 mt-2">
-                              {project.tech_stack.slice(0, 5).map(t => (
-                                <span key={t} className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border">{t}</span>
-                              ))}
-                            </div>
-                          )}
                         </div>
                       </div>
+                    </div>
 
-                      <div className="flex sm:flex-col items-center sm:items-end gap-3 flex-shrink-0">
-                        {project.ai_score != null && (
-                          <div className="text-center hidden sm:block">
-                            <div className={cn("font-display font-extrabold text-2xl",
-                              project.ai_score >= 80 ? "text-emerald-400" :
-                              project.ai_score >= 60 ? "text-amber-400" : "text-rose-400"
-                            )}>{project.ai_score}</div>
-                            <div className="text-xs text-muted-foreground">AI Score</div>
-                          </div>
-                        )}
-                        <JoinButton project={project} />
+                    <p className="text-sm text-muted-foreground leading-relaxed mb-6 line-clamp-3 flex-1">
+                      {project.pitch}
+                    </p>
+
+                    <div className="flex items-center gap-4 text-sm font-medium text-muted-foreground mb-6 bg-muted/30 p-3 rounded-lg">
+                      <div className="flex items-center gap-1.5">
+                        <Users className="size-4 text-primary" />
+                        <span>{teamSize + 1} Team</span>
+                      </div>
+                      <div className="w-px h-4 bg-border" />
+                      <div className="flex items-center gap-1.5">
+                        <Sparkles className="size-4 text-emerald-400" />
+                        <span>AI: {project.ai_score ?? "N/A"}</span>
                       </div>
                     </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex gap-3 mt-auto">
+                      <Link to={`/workspace/${project.id}`} className="flex-1">
+                        <Button 
+                          variant={hasWorkspace ? "gradient" : "outline"} 
+                          className="w-full gap-2 shadow-sm font-bold"
+                        >
+                          <Code2 className="size-4" /> 
+                          {hasWorkspace ? "Enter IDE" : "Initialize IDE"}
+                        </Button>
+                      </Link>
+                      
+                      <Link to={`/projects/${project.id}`}>
+                        <Button variant="secondary" title="View Details" className="px-4">
+                          <ExternalLink className="size-4" />
+                        </Button>
+                      </Link>
+                    </div>
+
                   </Card>
                 </motion.div>
               );
@@ -283,35 +247,6 @@ export default function Projects() {
           </div>
         )}
       </div>
-
-      {/* Join request modal */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-            className="bg-card border border-border rounded-2xl p-6 max-w-md w-full shadow-2xl">
-            <h3 className="font-display font-bold text-lg mb-2 text-foreground">Request to Join</h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              Send a message to <span className="font-semibold text-foreground">{showModal.title}</span>'s founder explaining why you want to join.
-            </p>
-            <textarea
-              value={joinMsg}
-              onChange={e => setJoinMsg(e.target.value)}
-              placeholder="Explain your relevant skills and how you can contribute to this project..."
-              rows={4}
-              className="w-full rounded-xl border border-border bg-input px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-ring resize-none mb-4"
-            />
-            <div className="flex gap-3">
-              <Button variant="outline" className="flex-1" onClick={() => { setModal(null); setJoinMsg(""); }}>
-                Cancel
-              </Button>
-              <Button variant="gradient" className="flex-1" loading={joining === showModal.id}
-                onClick={() => sendJoinRequest(showModal)}>
-                Send Request
-              </Button>
-            </div>
-          </motion.div>
-        </div>
-      )}
     </DashboardLayout>
   );
 }

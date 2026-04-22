@@ -1,19 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl =
-  import.meta.env.VITE_SUPABASE_URL ||
-  "https://avgfdwagvkaovtjbqvkz.supabase.co";
-
-// Supabase changed anon key format from "eyJ..." to "sb_publishable_..."
-// Both formats work with @supabase/supabase-js v2.50+
-const supabaseAnonKey =
-  import.meta.env.VITE_SUPABASE_ANON_KEY ||
-  "sb_publishable_Ruljr_uVNsbBW-1Gr6oCQQ_ed6WEXEH";
+// Use the ENV variables exclusively to ensure you're on the right project
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error(
-    "Missing Supabase env vars. Check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in frontend/.env"
-  );
+  // This helps you debug if Vite is failing to read your .env file
+  console.error("❌ Supabase Env Vars Missing! Check your .env file in the frontend folder.");
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
@@ -21,10 +14,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
-    storageKey: "techit-auth",
-  },
-  global: {
-    headers: { "x-application-name": "techit-network" },
+    storageKey: "techit-auth-v2", // Updated key to clear any old corrupted cache
   },
 });
 

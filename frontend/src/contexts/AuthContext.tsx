@@ -1,10 +1,15 @@
 import {
-  createContext, useContext, useEffect, useState,
-  useCallback, type ReactNode,
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+  type ReactNode,
 } from "react";
 import { supabase } from "../lib/supabase";
 import type { User, Session } from "@supabase/supabase-js";
 
+// --- TYPES ---
 export type Role = "founder" | "collaborator" | "investor" | "organisation";
 
 export interface Profile {
@@ -41,8 +46,12 @@ export interface Profile {
   portfolio_url: string | null;
   timezone: string | null;
   certifications: Array<{
-    id: string; name: string; issuer: string;
-    verified: boolean; issued_at: string; file_url?: string;
+    id: string;
+    name: string;
+    issuer: string;
+    verified: boolean;
+    issued_at: string;
+    file_url?: string;
   }>;
   created_at: string;
   updated_at: string;
@@ -74,10 +83,16 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [user, setUser]       = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [loading, setLoading] = useState(true);
+
+  // Instant Load from Cache
+  const [profile, setProfile] = useState<Profile | null>(() => {
+    const cached = localStorage.getItem("techit_auth_cache");
+    return cached ? JSON.parse(cached) : null;
+  });
+
+  const [loading, setLoading] = useState(!localStorage.getItem("techit_auth_cache"));
 
   const fetchProfile = useCallback(async (userId: string) => {
     try {
@@ -85,158 +100,112 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         .from("profiles")
         .select("*")
         .eq("user_id", userId)
-        .single();
+        .maybeSingle();
 
-      if (error && error.code !== "PGRST116") {
-        console.error("[Auth] fetchProfile error:", error.message);
+      if (data && !error) {
+        setProfile(data);
+        localStorage.setItem("techit_auth_cache", JSON.stringify(data));
+      } else if (!data && !error) {
+        // Auto-repair missing profile row
+        const { data: newProfile } = await supabase
+          .from("profiles")
+          .insert({
+            user_id: userId,
+            email: localStorage.getItem("techit_last_email") || "",
+            first_name: "TechIT",
+            last_name: "Builder",
+            role: "founder",
+            credit_balance: 250,
+            skills: [],
+            industries: [],
+            secondary_roles: [],
+            investment_focus: [],
+          })
+          .select()
+          .single();
+
+        if (newProfile) {
+          setProfile(newProfile);
+          localStorage.setItem("techit_auth_cache", JSON.stringify(newProfile));
+        }
       }
-      setProfile(data ?? null);
     } catch (err) {
-      console.error("[Auth] fetchProfile exception:", err);
-      setProfile(null);
+      console.warn("Background sync delay.");
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
+    // EMERGENCY TIMEOUT: Force stop spinner after 3 seconds
+    const timer = setTimeout(() => setLoading(false), 3000);
+
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s);
       setUser(s?.user ?? null);
       if (s?.user) {
         fetchProfile(s.user.id);
       } else {
+        localStorage.removeItem("techit_auth_cache");
         setLoading(false);
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, s) => {
-        setSession(s);
-        setUser(s?.user ?? null);
-        if (s?.user) {
-          await fetchProfile(s.user.id);
-        } else {
-          setProfile(null);
-          setLoading(false);
-        }
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, s) => {
+      setSession(s);
+      setUser(s?.user ?? null);
+      if (s?.user) {
+        await fetchProfile(s.user.id);
+      } else {
+        setProfile(null);
+        localStorage.removeItem("techit_auth_cache");
+        setLoading(false);
       }
-    );
+    });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      clearTimeout(timer);
+      subscription.unsubscribe();
+    };
   }, [fetchProfile]);
 
-  const signUp = async ({
-    email, password, firstName, lastName,
-    phone, country, countryCode, role,
-  }: SignUpData): Promise<{ error: Error | null }> => {
-    try {
-      // Step 1: Create auth user
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          // Skip email confirmation in development
-          data: {
-            first_name: firstName,
-            last_name: lastName,
-          },
-        },
-      });
-
-      if (authError) return { error: new Error(authError.message) };
-      if (!authData.user) return { error: new Error("Signup failed — no user returned") };
-
-      const userId = authData.user.id;
-
-      // Step 2: Create profile record
-      // Use INSERT with ON CONFLICT DO UPDATE to handle both new and existing
-      const profileData = {
-        user_id: userId,
-        email: email.toLowerCase().trim(),
-        first_name: firstName.trim(),
-        last_name: lastName.trim(),
-        phone: phone.trim(),
-        country: country.trim(),
-        country_code: countryCode,
-        role,
-        credit_balance: 250,
-        credibility_score: 0,
-        is_verified: false,
-        is_onboarded: false,
-        skills: [] as string[],
-        industries: [] as string[],
-        secondary_roles: [] as string[],
-        investment_focus: [] as string[],
-        certifications: [] as unknown[],
-        updated_at: new Date().toISOString(),
-      };
-
-      // Try insert first
-      const { error: insertError } = await supabase
-        .from("profiles")
-        .insert(profileData);
-
-      if (insertError) {
-        // If duplicate (user re-registering), try upsert
-        if (insertError.code === "23505") {
-          const { error: upsertError } = await supabase
-            .from("profiles")
-            .upsert(profileData, { onConflict: "user_id" });
-          if (upsertError) {
-            console.error("[Auth] Profile upsert fallback error:", upsertError.message);
-            return { error: new Error(`Profile creation failed: ${upsertError.message}`) };
-          }
-        } else {
-          console.error("[Auth] Profile insert error:", insertError.message, insertError.code);
-          return { error: new Error(`Could not save user: ${insertError.message}`) };
-        }
-      }
-
-      return { error: null };
-    } catch (e) {
-      console.error("[Auth] signUp exception:", e);
-      return { error: e instanceof Error ? e : new Error("Unknown signup error") };
-    }
+  const signUp = async (data: SignUpData) => {
+    localStorage.setItem("techit_last_email", data.email);
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: data.email,
+      password: data.password,
+      options: { data: { first_name: data.firstName, last_name: data.lastName } },
+    });
+    if (authError) return { error: new Error(authError.message) };
+    return { error: null };
   };
 
   const signIn = async (email: string, password: string) => {
+    setLoading(true);
+    localStorage.setItem("techit_last_email", email);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     return { error: error ? new Error(error.message) : null };
   };
 
   const signOut = async () => {
+    setLoading(true);
     await supabase.auth.signOut();
-    setProfile(null);
-    setUser(null);
-    setSession(null);
+    localStorage.removeItem("techit_auth_cache");
+    setProfile(null); setUser(null); setSession(null);
+    setLoading(false);
   };
 
-  const updateProfile = async (updates: Partial<Profile>): Promise<{ error: Error | null }> => {
+  const updateProfile = async (updates: Partial<Profile>) => {
     if (!user) return { error: new Error("Not authenticated") };
-    try {
-      const { error } = await supabase
-        .from("profiles")
-        .update({ ...updates, updated_at: new Date().toISOString() })
-        .eq("user_id", user.id);
-
-      if (error) return { error: new Error(error.message) };
-      await fetchProfile(user.id);
-      return { error: null };
-    } catch (e) {
-      return { error: e instanceof Error ? e : new Error("Update failed") };
-    }
+    const { error } = await supabase.from("profiles").update(updates).eq("user_id", user.id);
+    if (!error) await fetchProfile(user.id);
+    return { error: error ? new Error(error.message) : null };
   };
 
-  const refreshProfile = async () => {
-    if (user) await fetchProfile(user.id);
-  };
+  const refreshProfile = async () => { if (user) await fetchProfile(user.id); };
 
   return (
-    <AuthContext.Provider value={{
-      user, session, profile, loading,
-      signUp, signIn, signOut, updateProfile, refreshProfile,
-    }}>
+    <AuthContext.Provider value={{ user, session, profile, loading, signUp, signIn, signOut, updateProfile, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );
@@ -244,6 +213,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
 export const useAuth = () => {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used inside <AuthProvider>");
+  if (!ctx) throw new Error("useAuth error");
   return ctx;
 };

@@ -49,11 +49,13 @@ import Messages from "./dashboard/shared/Messages";
 import Notifications from "./dashboard/shared/Notifications";
 import Settings from "./dashboard/shared/Settings";
 import Wallet from "./dashboard/shared/Wallet";
-import Workspace from "./dashboard/shared/Workspace";
 import People from "./dashboard/shared/People";
-import Projects from "./dashboard/shared/Projects";
 
-import Workspaces from "./dashboard/founders/workspaces";
+// --- THE NEW 3-TIER WORKSPACE ARCHITECTURE ---
+import Workspaces from "./pages/workspace/Workspaces";
+import NewProject from "./pages/workspace/NewProject";
+import ProjectOffice from "./pages/workspace/Projects";
+import WorkspaceIDE from "./pages/workspace/IDE";
 
 const ROLE_ROUTES: Record<string, string> = {
   founder: "/dashboard",
@@ -137,16 +139,18 @@ export default function App() {
         <Route path="/org/talent"     element={<ProtectedRoute><TalentSearch /></ProtectedRoute>} />
 
         {/* Shared */}
-        <Route path="/feed"                element={<ProtectedRoute><Feed /></ProtectedRoute>} />
-        <Route path="/messages"            element={<ProtectedRoute><Messages /></ProtectedRoute>} />
-        <Route path="/notifications"       element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
-        <Route path="/settings"            element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-        <Route path="/wallet"              element={<ProtectedRoute><Wallet /></ProtectedRoute>} />
-        <Route path="/workspace/:projectId" element={<ProtectedRoute><Workspace /></ProtectedRoute>} />
-        <Route path="/people"              element={<ProtectedRoute><People /></ProtectedRoute>} />
-        <Route path="/projects"            element={<ProtectedRoute><Projects /></ProtectedRoute>} />
+        <Route path="/feed"          element={<ProtectedRoute><Feed /></ProtectedRoute>} />
+        <Route path="/messages"      element={<ProtectedRoute><Messages /></ProtectedRoute>} />
+        <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
+        <Route path="/settings"      element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+        <Route path="/wallet"        element={<ProtectedRoute><Wallet /></ProtectedRoute>} />
+        <Route path="/people"        element={<ProtectedRoute><People /></ProtectedRoute>} />
 
-        <Route path="/workspaces" element={<Workspaces />} />
+        {/* --- WORKSPACE SUITE (The New Architecture) --- */}
+        <Route path="/workspaces" element={<ProtectedRoute><Workspaces /></ProtectedRoute>} />
+        <Route path="/workspaces/new" element={<ProtectedRoute><NewProject /></ProtectedRoute>} />
+        <Route path="/workspace/:projectId" element={<ProtectedRoute><ProjectOffice /></ProtectedRoute>} />
+        <Route path="/workspace/:projectId/ide" element={<ProtectedRoute><WorkspaceIDE /></ProtectedRoute>} />
 
         <Route path="*" element={<NotFound />} />
       </Routes>
